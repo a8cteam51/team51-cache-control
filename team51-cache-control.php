@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       Team51 Cache Control
  * Plugin URI:        https://github.com/a8cteam51/team51-cache-control
- * Description:       Tunes Batcache TTLs on WP Cloud - longer cache for older posts, feeds, and archives. Configurable from Settings → Cache Control.
- * Version:           1.2.0
+ * Description:       Tunes Batcache TTLs on WP Cloud - longer cache for older posts, pages, feeds, and archives. Configurable from Settings → Cache Control.
+ * Version:           1.0.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            WordPress.com Special Projects
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TEAM51_CACHE_CONTROL_VERSION', '1.2.0' );
+define( 'TEAM51_CACHE_CONTROL_VERSION', '1.0.0' );
 define( 'TEAM51_CACHE_CONTROL_OPTION', 'team51_cache_control_settings' );
 define( 'TEAM51_CACHE_CONTROL_PLUGIN_FILE', __FILE__ );
 
@@ -39,14 +39,16 @@ define( 'TEAM51_CACHE_CONTROL_PLUGIN_FILE', __FILE__ );
  */
 function team51_cache_control_defaults(): array {
 	return array(
-		'enabled'              => true,
-		'post_recent_seconds'  => 5 * MINUTE_IN_SECONDS, // Newer than mid-age threshold; matches platform default.
-		'post_old_seconds'     => DAY_IN_SECONDS,        // Posts older than 1 year.
-		'post_old_threshold'   => YEAR_IN_SECONDS,
-		'post_mid_seconds'     => HOUR_IN_SECONDS,       // Posts older than 1 week (but newer than the "old" threshold).
-		'post_mid_threshold'   => WEEK_IN_SECONDS,
-		'feed_seconds'         => HOUR_IN_SECONDS,
-		'archive_seconds'      => 30 * MINUTE_IN_SECONDS, // category, tag, author, date archives.
+		'enabled'             => true,
+		'post_recent_seconds' => 5 * MINUTE_IN_SECONDS, // Newer than mid-age threshold; matches platform default.
+		'post_old_seconds'    => DAY_IN_SECONDS,        // Posts older than 1 year.
+		'post_old_threshold'  => YEAR_IN_SECONDS,
+		'post_mid_seconds'    => HOUR_IN_SECONDS,       // Posts older than 1 week (but newer than the "old" threshold).
+		'post_mid_threshold'  => WEEK_IN_SECONDS,
+		'page_seconds'        => HOUR_IN_SECONDS,        // Static pages — usually low-churn.
+		'feed_seconds'        => HOUR_IN_SECONDS,
+		'archive_seconds'     => 30 * MINUTE_IN_SECONDS, // category, tag, author, date archives.
+		'exclusions'          => array(),                // List of paths to exclude from custom TTLs.
 	);
 }
 
@@ -73,12 +75,18 @@ function team51_cache_control_get_ttl_choices(): array {
 require_once __DIR__ . '/includes/class-cache-control.php';
 require_once __DIR__ . '/includes/class-settings-page.php';
 
-add_action( 'plugins_loaded', static function () {
+/**
+ * Bootstraps the plugin singletons on plugins_loaded.
+ *
+ * Settings_Page only registers admin-context hooks internally, so it's safe
+ * (and slightly cleaner) to instantiate it unconditionally — the hooks will
+ * simply not fire on front-end requests.
+ */
+function team51_cache_control_bootstrap(): void {
 	Team51_Cache_Control\Cache_Control::instance();
-	if ( is_admin() ) {
-		Team51_Cache_Control\Settings_Page::instance();
-	}
-} );
+	Team51_Cache_Control\Settings_Page::instance();
+}
+add_action( 'plugins_loaded', 'team51_cache_control_bootstrap' );
 
 /**
  * Get current settings, merged with defaults.

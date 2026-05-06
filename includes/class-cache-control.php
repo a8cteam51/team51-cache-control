@@ -63,6 +63,12 @@ final class Cache_Control {
 			return;
 		}
 
+		// Path-based exclusions: skip TTL adjustments entirely for matched URLs.
+		// They fall back to the platform default (5 min, times=2).
+		if ( $this->is_excluded( $settings ) ) {
+			return;
+		}
+
 		$ttl   = null;
 		$times = null;
 
@@ -84,6 +90,9 @@ final class Cache_Control {
 					$times = 1;
 				}
 			}
+		} elseif ( is_singular( 'page' ) ) {
+			$ttl   = (int) $settings['page_seconds'];
+			$times = 1;
 		} elseif ( is_category() || is_tag() || is_author() || is_date() ) {
 			$ttl = (int) $settings['archive_seconds'];
 		}
@@ -115,5 +124,54 @@ final class Cache_Control {
 				$batcache['times'] = $times;
 			}
 		}
+	}
+
+	/**
+	 * Determine whether the current request path is in the user-configured
+	 * exclusion list. Comparison is normalized so trailing-slash and full-URL
+	 * differences don't matter.
+	 *
+	 * @param array<string,mixed> $settings Current plugin settings.
+	 */
+	private function is_excluded( array $settings ): bool {
+		if ( empty( $settings['exclusions'] ) || ! is_array( $settings['exclusions'] ) ) {
+			return false;
+		}
+
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '/';
+		$current     = wp_parse_url( (string) $request_uri, PHP_URL_PATH );
+		if ( ! is_string( $current ) || '' === $current ) {
+			$current = '/';
+		}
+		$current = $this->normalize_path( $current );
+
+		foreach ( $settings['exclusions'] as $excl ) {
+			if ( ! is_string( $excl ) || '' === $excl ) {
+				continue;
+			}
+			if ( $current === $this->normalize_path( $excl ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Normalize a path for comparison: strip protocol/host if present,
+	 * ensure a single leading slash, ensure a single trailing slash.
+	 *
+	 * `/` (homepage) is preserved as-is.
+	 */
+	private function normalize_path( string $path ): string {
+		$parsed = wp_parse_url( $path );
+		if ( is_array( $parsed ) && isset( $parsed['path'] ) ) {
+			$path = $parsed['path'];
+		}
+		$path = '/' . trim( $path, '/' );
+		if ( '/' === $path ) {
+			return $path;
+		}
+		return $path . '/';
 	}
 }

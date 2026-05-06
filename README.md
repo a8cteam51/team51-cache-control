@@ -13,6 +13,7 @@ This plugin raises TTLs in tiers based on what the page is and how recently it w
 | Recent posts (< 1 week old, by `post_modified`) | 5 min (platform default) | Preserves freshness for new content. |
 | Mid-age posts (1 week → 1 year) | 1 hour | Caches on first hit (`times=1`). |
 | Old posts (> 1 year) | 24 hours | Caches on first hit (`times=1`). |
+| Pages (singular `page` post type) | 1 hour | Caches on first hit (`times=1`). |
 | Feeds (RSS / Atom) | 1 hour | RSS readers poll on their own intervals. |
 | Archives (category, tag, author, date) | 30 minutes | |
 
@@ -37,8 +38,10 @@ Long TTLs only ever apply to URLs where nothing has changed.
 - **Enable plugin** — checkbox. Unchecking reverts the entire site to the platform default (5 min, `times=2`). Useful for A/B comparison or troubleshooting.
 - **Feeds** — select TTL.
 - **Archives** — select TTL.
+- **Pages** — select TTL for singular pages (About, Contact, etc.).
 - **Older posts (over 1 week)** — configurable threshold + TTL.
 - **Archive posts (over 1 year)** — configurable threshold + TTL.
+- **URL exclusions** — comma- or newline-separated list of paths that should fall back to the platform default. Useful for cart/checkout, account, or any URL you never want long-cached. Paths are normalized (trailing slashes optional, full URLs accepted — only the path is stored). Example: `/cart/, /my-account/, /preview/`.
 - **Reset to defaults** button at the bottom of the page.
 
 TTL and threshold options are presented as dropdowns with a fixed allowed set (5 min through 1 week for TTLs; 1 day through 2 years for thresholds). Direct option pokes outside that range are rejected by the sanitizer.

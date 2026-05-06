@@ -100,6 +100,18 @@ final class Settings_Page {
 		);
 
 		add_settings_field(
+			'page_seconds',
+			__( 'Pages (static pages)', 'team51-cache-control' ),
+			array( $this, 'render_seconds_field' ),
+			self::PAGE_SLUG,
+			'team51_cache_control_main',
+			array(
+				'key'         => 'page_seconds',
+				'description' => __( 'TTL for singular pages (About, Contact, etc.). Auto-purges on every save. Caches on first hit (times=1).', 'team51-cache-control' ),
+			)
+		);
+
+		add_settings_field(
 			'post_recent_seconds',
 			__( 'Recent posts (newer than “older posts” age threshold)', 'team51-cache-control' ),
 			array( $this, 'render_seconds_field' ),
@@ -135,6 +147,14 @@ final class Settings_Page {
 				'seconds_key'   => 'post_old_seconds',
 				'description'   => __( 'Stable archive content. Long TTL is safe — every save triggers a full purge across Batcache and Edge Cache.', 'team51-cache-control' ),
 			)
+		);
+
+		add_settings_field(
+			'exclusions',
+			__( 'URL exclusions', 'team51-cache-control' ),
+			array( $this, 'render_exclusions_field' ),
+			self::PAGE_SLUG,
+			'team51_cache_control_main'
 		);
 	}
 
@@ -214,6 +234,23 @@ final class Settings_Page {
 	}
 
 	/**
+	 * Render the URL exclusions textarea. Stored internally as an array of
+	 * normalized paths; presented to the user as a comma-separated list.
+	 */
+	public function render_exclusions_field(): void {
+		$settings   = \team51_cache_control_get_settings();
+		$exclusions = isset( $settings['exclusions'] ) && is_array( $settings['exclusions'] ) ? $settings['exclusions'] : array();
+		$value      = implode( ', ', $exclusions );
+		$name       = TEAM51_CACHE_CONTROL_OPTION . '[exclusions]';
+		?>
+		<textarea name="<?php echo esc_attr( $name ); ?>" rows="3" cols="60" class="large-text code" placeholder="/about-us/, /info/"><?php echo esc_textarea( $value ); ?></textarea>
+		<p class="description">
+			<?php esc_html_e( 'Excluded URLs fall back to the platform default (5 minutes). To exclude a single page use /page/ — for multiple pages separate with comma, e.g. /, /about-us/, /info/', 'team51-cache-control' ); ?>
+		</p>
+		<?php
+	}
+
+	/**
 	 * Allowed TTL values (seconds → label). Keeps things bounded and prevents
 	 * absurd values via direct option editing.
 	 *
@@ -263,7 +300,7 @@ final class Settings_Page {
 
 		$out['enabled'] = ! empty( $input['enabled'] );
 
-		foreach ( array( 'feed_seconds', 'archive_seconds', 'post_recent_seconds', 'post_mid_seconds', 'post_old_seconds' ) as $key ) {
+		foreach ( array( 'feed_seconds', 'archive_seconds', 'page_seconds', 'post_recent_seconds', 'post_mid_seconds', 'post_old_seconds' ) as $key ) {
 			$value       = isset( $input[ $key ] ) ? (int) $input[ $key ] : 0;
 			$out[ $key ] = in_array( $value, $valid_ttl, true ) ? $value : $defaults[ $key ];
 		}
@@ -272,6 +309,8 @@ final class Settings_Page {
 			$value       = isset( $input[ $key ] ) ? (int) $input[ $key ] : 0;
 			$out[ $key ] = in_array( $value, $valid_thr, true ) ? $value : $defaults[ $key ];
 		}
+
+		$out['exclusions'] = $this->sanitize_exclusions( isset( $input['exclusions'] ) ? $input['exclusions'] : '' );
 
 		// Enforce ordering: old threshold must be >= mid threshold.
 		if ( $out['post_old_threshold'] < $out['post_mid_threshold'] ) {
@@ -308,6 +347,50 @@ final class Settings_Page {
 	}
 
 	/**
+	 * Sanitize the exclusions textarea into an array of normalized paths.
+	 *
+	 * Accepts comma- and/or newline-separated entries. Strips any protocol/host
+	 * if a full URL was pasted, ensures a single leading slash, and a single
+	 * trailing slash (preserving the homepage as `/`). Duplicates are removed.
+	 *
+	 * @param mixed $raw Raw posted value (expected string).
+	 * @return array<int,string>
+	 */
+	private function sanitize_exclusions( $raw ): array {
+		if ( ! is_string( $raw ) ) {
+			return array();
+		}
+
+		$entries = preg_split( '/[,\r\n]+/', $raw );
+		if ( false === $entries ) {
+			return array();
+		}
+
+		$cleaned = array();
+		foreach ( $entries as $entry ) {
+			$entry = trim( $entry );
+			if ( '' === $entry ) {
+				continue;
+			}
+
+			$parsed = wp_parse_url( $entry );
+			if ( is_array( $parsed ) && isset( $parsed['path'] ) ) {
+				$entry = $parsed['path'];
+			}
+
+			$entry = sanitize_text_field( $entry );
+			$entry = '/' . trim( $entry, '/' );
+			if ( '/' !== $entry ) {
+				$entry .= '/';
+			}
+
+			$cleaned[] = $entry;
+		}
+
+		return array_values( array_unique( $cleaned ) );
+	}
+
+	/**
 	 * Reset settings to defaults. Wired to admin-post.php.
 	 */
 	public function handle_reset(): void {
@@ -331,13 +414,21 @@ final class Settings_Page {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+
+		// Read-only flag set by our own redirect in handle_reset(); display a
+		// success notice via the standard Settings API channel.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only display flag, no side effects.
+		if ( isset( $_GET['reset'] ) ) {
+			add_settings_error(
+				TEAM51_CACHE_CONTROL_OPTION,
+				'reset_done',
+				__( 'Settings reset to defaults.', 'team51-cache-control' ),
+				'success'
+			);
+		}
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Cache Control', 'team51-cache-control' ); ?></h1>
-
-			<?php if ( ! empty( $_GET['reset'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Settings reset to defaults.', 'team51-cache-control' ); ?></p></div>
-			<?php endif; ?>
 
 			<?php settings_errors( TEAM51_CACHE_CONTROL_OPTION ); ?>
 
