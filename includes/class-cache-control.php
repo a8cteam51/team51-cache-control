@@ -63,6 +63,12 @@ final class Cache_Control {
 			return;
 		}
 
+		// Query-string requests should keep platform defaults to avoid applying
+		// long-lived custom TTLs to parameterized URLs.
+		if ( $this->has_query_parameters() ) {
+			return;
+		}
+
 		// Path-based exclusions: skip TTL adjustments entirely for matched URLs.
 		// They fall back to the platform default (5 min, times=2).
 		if ( $this->is_excluded( $settings ) ) {
@@ -173,5 +179,18 @@ final class Cache_Control {
 			return $path;
 		}
 		return $path . '/';
+	}
+
+	/**
+	 * Check whether current request URL contains a query string.
+	 */
+	private function has_query_parameters(): bool {
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		if ( ! is_string( $request_uri ) || '' === $request_uri ) {
+			return false;
+		}
+
+		$query = wp_parse_url( $request_uri, PHP_URL_QUERY );
+		return is_string( $query ) && '' !== $query;
 	}
 }
